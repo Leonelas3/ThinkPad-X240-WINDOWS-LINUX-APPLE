@@ -1,0 +1,18 @@
+%YAML 1.1
+---
+# ser2net — expone el Sonoff Dongle Max como puerto TCP en la red
+# Fichero: /etc/ser2net.yaml  (dentro de WSL2 Ubuntu en el HP Mini)
+#
+# Puerto TCP 20108 es el estándar de facto que usa la comunidad de Home Assistant
+# para conexiones de red a coordinadores Zigbee (ZHA y zigbee2mqtt lo reconocen).
+#
+# El dispositivo /dev/ttyUSB0 aparece cuando usbipd-win adjunta el dongle a WSL2.
+# Si hay más dispositivos USB serie, puede aparecer como ttyUSB1 — verificar con:
+#   ls /dev/ttyUSB*
+
+connection: &sonoff_dongle
+  accepter: tcp,20108
+  connector: serialdev,/dev/ttyUSB0,115200n81,local
+  options:
+    kickolduser: true   # desconecta a la conexión anterior si ZHA se reconecta
+    banner: ""          # sin banner de bienvenida (algunos clientes no lo esperan)
