@@ -12,6 +12,7 @@ def _ensure_package(package: str, import_name: str | None = None) -> None:
 
 
 _ensure_package("PyQt6")
+_ensure_package("PyQt6-WebEngine", "PyQt6.QtWebEngineWidgets")
 _ensure_package("requests")
 _ensure_package("paramiko")
 
@@ -29,18 +30,14 @@ def main() -> None:
     app.setApplicationName("Gestión Red Doméstica")
     app.setOrganizationName("LeoNelastres")
 
-    if first_run:
-        QMessageBox.information(
-            None,
-            "Primera ejecución",
-            "No se encontró config.json.\n\n"
-            "Se ha creado una copia desde config.example.json.\n"
-            "Por favor, edita config.json y rellena tus credenciales antes de usar las funciones que requieren autenticación.",
-        )
-
     from gui.main_window import MainWindow
     window = MainWindow()
     window.show()
+
+    if first_run:
+        from gui.setup_wizard import SetupWizard
+        wizard = SetupWizard(window)
+        wizard.exec()
 
     sys.exit(app.exec())
 

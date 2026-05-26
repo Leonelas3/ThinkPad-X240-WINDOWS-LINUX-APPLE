@@ -15,6 +15,7 @@ from gui.styles import DARK_STYLESHEET
 from gui.devices_tab import DevicesTab, ScanWorker
 from gui.config_tab import ConfigTab
 from gui.log_tab import LogTab
+from gui.browser_tab import BrowserTab
 
 
 class MainWindow(QMainWindow):
@@ -66,10 +67,12 @@ class MainWindow(QMainWindow):
         self._devices_tab = DevicesTab(self)
         self._config_tab = ConfigTab(self)
         self._log_tab = LogTab(self)
+        self._browser_tab = BrowserTab()
 
         self._tabs.addTab(self._devices_tab, "🔍 Dispositivos")
         self._tabs.addTab(self._config_tab, "⚙️ Configuración")
         self._tabs.addTab(self._log_tab, "📋 Historial")
+        self._tabs.addTab(self._browser_tab, "🌐 Interfaz Web")
 
         # Recarga el log al entrar al tab
         self._tabs.currentChanged.connect(self._on_tab_changed)

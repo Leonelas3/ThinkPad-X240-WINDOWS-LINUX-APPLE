@@ -130,6 +130,10 @@ class AsusPanel(QWidget):
         btn_ddns = QPushButton("Verificar que apunta a WAN1")
         btn_ddns.clicked.connect(self._verify_ddns)
         ddns_layout.addWidget(btn_ddns)
+
+        btn_web_asus = QPushButton("Abrir panel web del router")
+        btn_web_asus.clicked.connect(self._open_asus_web)
+        ddns_layout.addWidget(btn_web_asus)
         ddns_layout.addStretch()
 
         layout.addWidget(ddns_group)
@@ -231,6 +235,11 @@ class AsusPanel(QWidget):
                 QMessageBox.warning(self, "DDNS", f"{domain} → {resolved}\nWAN1 actual: {wan1 or 'desconocida'}")
         except Exception as e:
             QMessageBox.warning(self, "Error DDNS", str(e))
+
+    def _open_asus_web(self) -> None:
+        ip = cfg.get("devices.asus_rt_be50.ip", "192.168.50.1")
+        self._main._tabs.setCurrentIndex(3)
+        self._main._browser_tab.navigate_to(f"http://{ip}")
 
     def _save_ips(self) -> None:
         if not _confirm(self, "Confirmar", "¿Guardar las IPs en config.json?"):
