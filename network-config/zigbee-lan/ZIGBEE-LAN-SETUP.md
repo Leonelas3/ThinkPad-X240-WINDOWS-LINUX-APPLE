@@ -7,7 +7,7 @@ a él por su IP.
 ```
 [Sala]
 Sonoff Dongle Max
-  ├── USB-C → cargador (solo alimentación eléctrica)
+  ├── USB-C → cargador de móvil / fuente USB (SOLO alimentación, NO datos)
   └── RJ45  → switch o Movistar HGU (LAN)
                     │
              ThinkPad X250 (HA)
@@ -21,8 +21,14 @@ Sonoff Dongle Max
 ### 1. Conectar el Sonoff a la red
 
 - **RJ45** → cualquier puerto LAN libre del switch o del Movistar HGU
-- **USB-C** → cargador de móvil o puerto USB del router (solo para dar corriente)
-- El cable USB que antes iba al ThinkPad X250 ya no es necesario para datos
+- **USB-C** → **cargador de móvil o fuente de alimentación USB** (5 V, solo
+  alimentación eléctrica — **no conectar al ThinkPad X250 ni a ningún PC**).
+  El USB-C del Sonoff Dongle Max no transmite datos; su único rol es suministrar
+  corriente al dispositivo. Conectarlo a un ordenador no aportaría nada y podría
+  causar confusión con el modo USB-serie que usaba antes.
+- El cable USB que antes iba al ThinkPad X250 ya no es necesario en absoluto
+  (ni para datos ni para alimentación, salvo que uses el puerto USB del router
+  como fuente de corriente en lugar de un cargador independiente).
 
 ### 2. Encontrar la IP del Sonoff
 

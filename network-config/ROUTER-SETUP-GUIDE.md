@@ -52,9 +52,16 @@ the DHCP list" (o "Static IP list" según versión de firmware).
 |-------------------|-----------------|----------------|---------------------------|
 | ThinkPad-X250-HA  | _rellenar_      | 192.168.50.10  | Home Assistant OS          |
 | HP-Mini-400G9     | _rellenar_      | 192.168.50.20  | Windows 11                 |
+| Sonoff-Dongle-Max | _rellenar_      | 192.168.50.5   | Coordinador Zigbee (LAN)   |
 
 Para cada dispositivo: introduce la MAC, la IP deseada, un nombre descriptivo →
 **Add** → al terminar pulsa **Apply**.
+
+**Sonoff Dongle Max — cómo obtener su MAC:**  
+Conéctalo a la red y búscalo en **Network Map → Clients** o **LAN → DHCP Leases**.
+Su interfaz web (`http://192.168.50.5` una vez asignada la IP estática) también
+muestra la MAC. Para los pasos completos de configuración consulta
+`network-config/zigbee-lan/ZIGBEE-LAN-SETUP.md`.
 
 ---
 
@@ -134,7 +141,7 @@ ssh admin@192.168.50.1 "iptables -t mangle -L PREROUTING -n -v --line-numbers"
 ```
 Debes ver líneas con `MARK set 0x1` (WAN1) asociadas a:
 - La IP `192.168.50.10` (ThinkPad HA, tanto como origen como destino)
-- Puertos 21, 22, 443, 990, 2283, 8123 (TCP y UDP)
+- Puertos 21, 22, 990, 2283, 8123 (TCP y UDP) — nota: el puerto 443 ya no está en esta lista; el tráfico 443 de HA queda forzado a WAN1 por la regla de IP del ThinkPad
 - Una regla `CONNMARK restore` en la posición 1 (primera de la cadena)
 - Una regla `CONNMARK save` en POSTROUTING
 
@@ -175,6 +182,14 @@ el acceso externo fallará aunque el port forwarding esté bien.
 6. Verifica que el campo de IP usa WAN1. En AsusWRT el cliente DDNS integrado
    usa la IP de WAN primaria por defecto. Si tu firmware muestra una opción
    "WAN interface for DDNS", selecciona `WAN1` / `wan0`.
+
+   > **Importante con Dual WAN:** en la pantalla WAN → DDNS, comprueba que el
+   > campo **"WAN Connection"** (o "WAN interface") está configurado en **WAN1**.
+   > Si queda en WAN2, DuckDNS apuntará a la IP de Vodafone y el port forwarding
+   > para Home Assistant y Google Home dejará de funcionar, aunque las reglas del
+   > router sean correctas. Este ajuste es especialmente importante tras cualquier
+   > cambio de firmware o reset de fábrica del router.
+
 7. Pulsa **Apply**.
 
 **Verificar:**

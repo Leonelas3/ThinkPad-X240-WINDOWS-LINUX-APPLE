@@ -1,0 +1,30 @@
+{
+  "_comment": "Copia este fichero como config.json y rellena tus credenciales. config.json está en .gitignore y nunca se sube a GitHub.",
+  "network": {
+    "subnet": "192.168.50.0/24",
+    "router_ip": "192.168.50.1"
+  },
+  "devices": {
+    "asus_rt_be50": {
+      "ip": "192.168.50.1",
+      "username": "CAMBIAR",
+      "password": "CAMBIAR"
+    },
+    "homeassistant": {
+      "ip": "192.168.50.10",
+      "port": 8123,
+      "token": "CAMBIAR_TOKEN_LARGA_DURACION"
+    },
+    "sonoff_zigbee": {
+      "ip": "192.168.50.5",
+      "zha_port": 6638
+    },
+    "hp_mini": {
+      "ip": "192.168.50.20"
+    }
+  },
+  "duckdns": {
+    "domain": "leonelastres.duckdns.org",
+    "token": "CAMBIAR"
+  }
+}

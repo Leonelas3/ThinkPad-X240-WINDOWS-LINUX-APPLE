@@ -26,7 +26,10 @@ WAN1_MARK="0x01/0x0f"
 
 # Puertos de salida que se consideran "de subida": SSH, FTP activo, FTPS,
 # Immich sync, y el propio puerto de HA (por si otro cliente sube datos a HA).
-UPLOAD_PORTS="21,22,443,990,2283,8123"
+# NOTA: el puerto 443 NO está aquí; el tráfico 443 hacia/desde HA (HAOS_IP)
+# ya queda forzado a WAN1 por la regla de BLOQUE 2. Incluir 443 en esta lista
+# forzaría TODO el tráfico HTTPS de la LAN a WAN1, rompiendo el load-balance.
+UPLOAD_PORTS="21,22,990,2283,8123"
 
 logger -t nat-start "Iniciando aplicación de reglas dual-WAN..."
 
@@ -96,4 +99,4 @@ ipt_insert_if_missing mangle PREROUTING \
 ipt_insert_if_missing mangle POSTROUTING \
     -j CONNMARK --save-mark --nfmask 0x0f --ctmask 0x0f
 
-logger -t nat-start "Reglas aplicadas: HAOS ($HAOS_IP) → WAN1 siempre; puertos subida ($UPLOAD_PORTS) → WAN1."
+logger -t nat-start "Reglas aplicadas: HAOS ($HAOS_IP) → WAN1 siempre; puertos subida ($UPLOAD_PORTS) → WAN1. Nota: 443 excluido (cubierto por regla HAOS_IP)."
