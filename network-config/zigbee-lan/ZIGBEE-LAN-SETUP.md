@@ -1,114 +1,123 @@
-# Sonoff Dongle Max — ZigBee por LAN
+# Sonoff Dongle Max — ZigBee por LAN via Asus RT-BE50
 
-Mueve el coordinador ZigBee del USB del ThinkPad X250 al HP Mini 400 G9,
-exponiéndolo como puerto serie TCP para que Home Assistant lo use por red.
+El Sonoff Dongle Max se conecta al **puerto USB del Asus RT-BE50** (que está en la sala
+junto al ThinkPad X250). El router expone el dongle como puerto serie TCP mediante
+`ser2net`, y Home Assistant ZHA se conecta a él por red local.
 
-**Flujo final:**
+**Sin hardware adicional. Sin coste extra.**
+
 ```
-Sonoff Dongle Max (USB)
-        │
-HP Mini 400 G9 — Windows 11
-  └── WSL2 Ubuntu + usbipd-win + ser2net → TCP 20108
-        │ LAN (192.168.50.0/24)
+[Sala]
+Sonoff Dongle Max
+       │ USB
+Asus RT-BE50 ── ser2net escucha en TCP 20108
+       │ LAN (192.168.50.0/24)
 ThinkPad X250 — Home Assistant OS
-  └── ZHA → socket://192.168.50.20:20108
+       └── ZHA → socket://192.168.50.1:20108
 ```
 
 ---
 
-## Requisitos previos
+## Paso 1 — Instalar Entware en el Asus RT-BE50
 
-| Requisito | Estado |
-|---|---|
-| HP Mini con Windows 11 actualizado | ✓ |
-| Virtualización habilitada en BIOS del HP Mini | Verificar |
-| Puerto TCP 20108 libre en red local | No requiere apertura en router (solo LAN) |
+Entware es el gestor de paquetes para routers ASUS. Requiere JFFS habilitado
+(ya configurado en la guía principal).
 
----
+Conéctate al router por SSH (usuario: `admin`, contraseña: la del router):
 
-## Instalación (una sola vez)
-
-### En el HP Mini — PowerShell como Administrador
-
-```powershell
-# Desde la carpeta network-config/zigbee-lan/
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\setup-hp-mini.ps1
+```sh
+ssh admin@192.168.50.1
 ```
 
-El script hace todo automáticamente:
-1. Instala **usbipd-win** (comparte USB por red interna)
-2. Instala **WSL2** con Ubuntu 22.04 (si no está)
-3. Instala **ser2net** en WSL2
-4. Copia la configuración `ser2net.yaml`
-5. Te pide el BUSID del dongle y lo vincula
-6. Crea la tarea de inicio automático `ZigbeeUSBLAN`
+Instala Entware:
 
-> Si Windows pide reinicio en algún paso, reinicia y vuelve a ejecutar el script.
+```sh
+entware-setup.sh
+```
+
+> Si el comando no existe, el router aún no tiene Entware. Ejecútalo así:
+> ```sh
+> curl -sL https://bin.entware.net/armv7sf-k3.10/installer/generic.sh | sh
+> ```
+> (AsusWRT usa arquitectura ARM — usar el paquete armv7sf)
 
 ---
 
-## Reconfigurar ZHA en Home Assistant
+## Paso 2 — Instalar ser2net y el driver CP2102N
+
+```sh
+# Actualizar lista de paquetes
+opkg update
+
+# Instalar ser2net
+opkg install ser2net
+
+# Verificar que el driver CP210x está cargado (Sonoff usa chip CP2102N)
+modprobe cp210x 2>/dev/null || true
+ls /dev/ttyUSB*   # debe mostrar /dev/ttyUSB0 con el dongle conectado
+```
+
+Si `/dev/ttyUSB0` no aparece, el kernel del router puede no incluir el módulo cp210x.
+En ese caso la alternativa es un Raspberry Pi Zero W (~€12) con ser2net como puente.
+
+---
+
+## Paso 3 — Copiar la configuración de ser2net
+
+Desde el PC (en la carpeta `network-config/zigbee-lan/`):
+
+```sh
+scp ser2net.yaml admin@192.168.50.1:/opt/etc/ser2net.yaml
+```
+
+O pégalo manualmente en el router con `vi /opt/etc/ser2net.yaml`.
+
+---
+
+## Paso 4 — Arrancar ser2net y habilitarlo al inicio
+
+```sh
+# Arrancar ahora
+ser2net -c /opt/etc/ser2net.yaml -n &
+
+# Verificar que escucha en el puerto
+netstat -tlnp | grep 20108
+
+# Habilitar arranque automático via JFFS (se añade al script wan-event existente)
+echo 'ser2net -c /opt/etc/ser2net.yaml -n 2>/dev/null &' >> /jffs/scripts/services-start
+chmod +x /jffs/scripts/services-start
+```
+
+---
+
+## Paso 5 — Reconfigurar ZHA en Home Assistant
 
 1. **Settings → Integrations → Zigbee Home Automation → Configure**
-2. Cambia el **Serial device path** de:
-   ```
-   /dev/ttyUSB0   ← valor actual (USB directo)
-   ```
-   a:
-   ```
-   socket://192.168.50.20:20108
-   ```
+2. Cambia el **Serial device path**:
+   - De: `/dev/ttyUSB0` (USB directo al ThinkPad)
+   - A: `socket://192.168.50.1:20108`
 3. **Baudrate:** 115200
-4. **Flow control:** Software (o None)
-5. Guarda y reinicia la integración ZHA (no hace falta reiniciar HA completo)
+4. Guarda — ZHA se reconecta sin perder los dispositivos emparejados.
 
-> Los dispositivos ZigBee ya emparejados se mantienen — ZHA guarda la base de datos
-> de dispositivos por separado. Solo cambia el transporte físico.
+> Haz un backup de HAOS antes de cambiar el transporte:
+> **Settings → System → Backups → Create backup**
 
 ---
 
 ## Verificación
 
-### Desde el HP Mini (WSL2)
-
-```bash
-# Comprobar que el dongle está en WSL2
-ls /dev/ttyUSB*          # debe mostrar /dev/ttyUSB0
-
-# Comprobar que ser2net escucha
-ss -tlnp | grep 20108    # debe mostrar 0.0.0.0:20108
-
-# Test manual de conectividad
-nc -z 192.168.50.20 20108 && echo "OK" || echo "NO RESPONDE"
-```
-
-### Desde el ThinkPad X250 (HAOS — Terminal add-on)
-
-```bash
-# Verificar conectividad al ser2net del HP Mini
-nc -z 192.168.50.20 20108 && echo "Puerto accesible" || echo "No alcanzable"
+```sh
+# Desde el ThinkPad X250 (terminal en HAOS o SSH)
+nc -z 192.168.50.1 20108 && echo "ser2net accesible" || echo "no responde"
 ```
 
 ---
 
 ## Solución de problemas
 
-| Síntoma | Causa probable | Solución |
+| Síntoma | Causa | Solución |
 |---|---|---|
-| `/dev/ttyUSB*` no aparece en WSL2 | usbipd no adjuntó el USB | Ejecutar manualmente: `usbipd attach --wsl --busid X-X` |
-| ser2net no escucha en el puerto | Falló el arranque | En WSL2: `sudo ser2net -c /etc/ser2net.yaml -n` |
-| ZHA no conecta por socket | IP o puerto incorrecto | Verificar IP del HP Mini con `ipconfig` en Windows |
-| ZHA conecta pero sin dispositivos | Dongle reiniciado, red ZigBee reestablecida | Esperar ~60 s; los dispositivos se reintegran solos |
-| Dongle aparece como `ttyUSB1` | Otro dispositivo USB serie presente | Editar `/etc/ser2net.yaml` en WSL2: cambiar `ttyUSB0` por `ttyUSB1` |
-
----
-
-## Notas importantes
-
-- **El puerto TCP 20108 es solo LAN** — no hace falta abrir este puerto en el router
-  ni crear reglas de port forwarding. ZHA se conecta desde la misma red local.
-- **No quitar el dongle del HP Mini sin detener ZHA** — puede corromper el estado
-  del coordinador ZigBee. Secuencia segura: pausar ZHA → quitar dongle → reemplazar.
-- **Backup de ZigBee antes de migrar:** en HAOS, descarga el backup del coordinador
-  desde Settings → System → Backups antes de cambiar el transporte.
+| `/dev/ttyUSB0` no aparece | Driver CP210x no cargado | `modprobe cp210x` — si falla, el kernel no incluye el módulo |
+| `netstat` no muestra el puerto 20108 | ser2net no arrancó | Revisar logs: `ser2net -c /opt/etc/ser2net.yaml` (sin `-n`) |
+| ZHA conecta pero sin dispositivos | Red ZigBee reconstruyéndose | Esperar 60 s; los dispositivos se reintegran solos |
+| Dongle aparece como `ttyUSB1` | Otro USB conectado al router | Cambiar `ttyUSB0` por `ttyUSB1` en `ser2net.yaml` |

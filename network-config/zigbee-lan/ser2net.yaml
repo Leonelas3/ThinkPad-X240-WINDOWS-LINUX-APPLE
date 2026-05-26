@@ -1,18 +1,20 @@
 %YAML 1.1
 ---
-# ser2net — expone el Sonoff Dongle Max como puerto TCP en la red
-# Fichero: /etc/ser2net.yaml  (dentro de WSL2 Ubuntu en el HP Mini)
+# ser2net — expone el Sonoff Dongle Max (ZigBee) como puerto TCP en la red
+# Fichero: /opt/etc/ser2net.yaml  (instalado en el Asus RT-BE50 via Entware)
 #
-# Puerto TCP 20108 es el estándar de facto que usa la comunidad de Home Assistant
-# para conexiones de red a coordinadores Zigbee (ZHA y zigbee2mqtt lo reconocen).
+# El Sonoff Dongle Max usa el chip CP2102N (Silicon Labs).
+# En AsusWRT aparece como /dev/ttyUSB0 cuando se conecta al puerto USB del router.
 #
-# El dispositivo /dev/ttyUSB0 aparece cuando usbipd-win adjunta el dongle a WSL2.
-# Si hay más dispositivos USB serie, puede aparecer como ttyUSB1 — verificar con:
+# Puerto TCP 20108: estándar de la comunidad HA para coordinadores ZigBee en red.
+# Solo escucha en la red local (LAN) — no hace falta abrir este puerto en el firewall.
+#
+# Verificar que el dispositivo existe antes de arrancar ser2net:
 #   ls /dev/ttyUSB*
 
 connection: &sonoff_dongle
   accepter: tcp,20108
   connector: serialdev,/dev/ttyUSB0,115200n81,local
   options:
-    kickolduser: true   # desconecta a la conexión anterior si ZHA se reconecta
-    banner: ""          # sin banner de bienvenida (algunos clientes no lo esperan)
+    kickolduser: true
+    banner: ""
