@@ -1,0 +1,21 @@
+# Fragmento para añadir a /config/configuration.yaml en Home Assistant OS.
+# Editar con el add-on "File Editor" o "Studio Code Server".
+
+homeassistant:
+  # external_url sin puerto funciona porque el router redirige 443 → 192.168.50.10:8123.
+  # Google Home y otras integraciones que asumen HTTPS estándar usarán esta URL.
+  external_url: "https://leonelastres.duckdns.org"
+
+  # internal_url es la URL que HA usa cuando el cliente está dentro de la red local.
+  internal_url: "http://192.168.50.10:8123"
+
+http:
+  # Necesario solo si hay un reverse proxy (nginx, Cloudflare Tunnel, etc.) delante de HA.
+  # Si accedes directamente por port forwarding (sin proxy), estas líneas son opcionales
+  # pero no hacen daño tenerlas preparadas.
+  use_x_forwarded_for: true
+  trusted_proxies:
+    - 127.0.0.1
+    - ::1
+    # Añade aquí la IP de tu reverse proxy si lo usas, por ejemplo:
+    # - 192.168.50.1   # IP del router si actúa como proxy

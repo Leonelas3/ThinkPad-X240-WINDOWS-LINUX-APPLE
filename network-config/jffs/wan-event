@@ -1,0 +1,26 @@
+#!/bin/sh
+# /jffs/scripts/wan-event
+# Ejecutado por AsusWRT cuando cambia el estado de cualquier interfaz WAN
+# (conexión, desconexión, failover, reconexión tras caída).
+#
+# Argumentos que pasa AsusWRT: $1 = interfaz (wan0/wan1), $2 = evento (connected/disconnected/...)
+#
+# El objetivo es re-aplicar las reglas de mangle/mark después de que
+# AsusWRT reconstruye sus propias reglas de iptables durante un evento WAN.
+
+WAN_IF="$1"
+WAN_EVENT="$2"
+
+logger -t wan-event "Evento detectado: interfaz=$WAN_IF estado=$WAN_EVENT"
+
+NAT_START="/jffs/scripts/nat-start"
+
+if [ -x "$NAT_START" ]; then
+    # Pequeña espera para que AsusWRT termine de escribir sus propias reglas
+    # antes de que insertemos las nuestras encima.
+    sleep 2
+    "$NAT_START"
+    logger -t wan-event "nat-start re-ejecutado tras evento $WAN_EVENT en $WAN_IF"
+else
+    logger -t wan-event "ADVERTENCIA: $NAT_START no encontrado o no ejecutable"
+fi

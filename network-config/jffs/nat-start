@@ -1,0 +1,62 @@
+#!/bin/sh
+# /jffs/scripts/nat-start
+# Ejecutado por AsusWRT tras cada (re)configuración de iptables NAT.
+#
+# ─── IPs A PERSONALIZAR ────────────────────────────────────────────────────────
+HA_IP="192.168.50.10"          # ThinkPad X250 — Home Assistant
+HP_MINI_IP="192.168.50.20"     # HP Pro Mini 400 G9 — Windows 11
+LAN_SUBNET="192.168.50.0/24"
+# ───────────────────────────────────────────────────────────────────────────────
+#
+# Marcas de WAN que usa AsusWRT internamente:
+#   WAN1 (O2/fibra)      → 0x01  (máscara 0x0f)
+#   WAN2 (Vodafone/cable)→ 0x02  (máscara 0x0f)
+#
+# Las reglas se insertan con -I (insert) para tener prioridad sobre las de ASUS.
+# Antes de insertar cada regla se comprueba si ya existe para ser idempotente.
+
+MANGLE="iptables -t mangle"
+WAN1_MARK="0x01/0x0f"
+WAN2_MARK="0x02/0x0f"
+
+rule_exists() {
+    # $1 = tabla, $2... = resto de la regla (-C no inserta, solo comprueba)
+    iptables -t "$1" -C "${@:2}" 2>/dev/null
+}
+
+# ── 1. TODO el tráfico del HA server va siempre por WAN1 ─────────────────────
+# Esto incluye subidas Y bajadas del servidor HA: es imprescindible para que
+# las conexiones entrantes (port forward 443/8123) sean estables.
+
+if ! rule_exists mangle PREROUTING -s "$HA_IP" -j MARK --set-mark $WAN1_MARK; then
+    $MANGLE -I PREROUTING -s "$HA_IP" -j MARK --set-mark $WAN1_MARK
+fi
+
+# ── 2. Puertos de subida comunes → WAN1 para cualquier origen en la LAN ──────
+# No podemos distinguir upload/download de un mismo socket, pero sí podemos
+# forzar por WAN1 las conexiones que SALEN hacia servicios donde la subida
+# importa (SSH, FTP activo, Immich sync, etc.).
+# Esto afecta a conexiones INICIADAS desde la LAN hacia esos puertos remotos.
+
+for DPORT in 22 21 990 2283; do
+    if ! rule_exists mangle PREROUTING -s "$LAN_SUBNET" -p tcp --dport $DPORT -j MARK --set-mark $WAN1_MARK; then
+        $MANGLE -I PREROUTING -s "$LAN_SUBNET" -p tcp --dport $DPORT -j MARK --set-mark $WAN1_MARK
+    fi
+done
+
+# Puerto UDP 22 no existe (SFTP usa TCP/22, mismo caso anterior).
+# Si en el futuro añades rclone sftp u otro, ya queda cubierto por el tcp/22.
+
+# ── 3. CONNMARK: propagar la marca de WAN al resto de paquetes del flujo ─────
+# Sin esto, solo el primer paquete SYN llevaría la marca; los siguientes
+# irían por la ruta por defecto del load balancer.
+
+if ! rule_exists mangle PREROUTING -j CONNMARK --restore-mark --mask 0x0f; then
+    $MANGLE -I PREROUTING -j CONNMARK --restore-mark --mask 0x0f
+fi
+
+if ! rule_exists mangle POSTROUTING -j CONNMARK --save-mark --mask 0x0f; then
+    $MANGLE -I POSTROUTING -j CONNMARK --save-mark --mask 0x0f
+fi
+
+logger -t nat-start "Reglas de routing dual-WAN aplicadas (HA=$HA_IP → WAN1, puertos subida → WAN1)"
