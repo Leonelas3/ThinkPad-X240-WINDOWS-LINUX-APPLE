@@ -1,62 +1,99 @@
 #!/bin/sh
+# =============================================================================
 # /jffs/scripts/nat-start
-# Ejecutado por AsusWRT tras cada (re)configuración de iptables NAT.
 #
-# ─── IPs A PERSONALIZAR ────────────────────────────────────────────────────────
-HA_IP="192.168.50.10"          # ThinkPad X250 — Home Assistant
+# Ejecutado por AsusWRT automáticamente después de cada (re)construcción de las
+# reglas NAT/iptables del router (arranque, reconexión WAN, etc.).
+#
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │  IPs A PERSONALIZAR                                                     │
+# │  Ajusta estas variables antes de copiar el script al router.            │
+# └─────────────────────────────────────────────────────────────────────────┘
+HAOS_IP="192.168.50.10"        # ThinkPad X250 — Home Assistant OS (servidor)
 HP_MINI_IP="192.168.50.20"     # HP Pro Mini 400 G9 — Windows 11
-LAN_SUBNET="192.168.50.0/24"
-# ───────────────────────────────────────────────────────────────────────────────
+LAN_SUBNET="192.168.50.0/24"   # Subred completa (para reglas de puertos de subida)
+# =============================================================================
 #
-# Marcas de WAN que usa AsusWRT internamente:
-#   WAN1 (O2/fibra)      → 0x01  (máscara 0x0f)
-#   WAN2 (Vodafone/cable)→ 0x02  (máscara 0x0f)
+# Marcas internas de AsusWRT para selección de WAN (máscara 0x0f):
+#   WAN1 → 0x01  (O2/Movistar fibra, puerto 2.5G)
+#   WAN2 → 0x02  (Vodafone cable, LAN3 como WAN2)
 #
-# Las reglas se insertan con -I (insert) para tener prioridad sobre las de ASUS.
-# Antes de insertar cada regla se comprueba si ya existe para ser idempotente.
+# Usamos -I (insert) en lugar de -A (append) para que nuestras reglas queden
+# ANTES de las reglas de ASUS y tengan prioridad sobre ellas.
+# =============================================================================
 
-MANGLE="iptables -t mangle"
 WAN1_MARK="0x01/0x0f"
-WAN2_MARK="0x02/0x0f"
 
-rule_exists() {
-    # $1 = tabla, $2... = resto de la regla (-C no inserta, solo comprueba)
-    iptables -t "$1" -C "${@:2}" 2>/dev/null
+# Puertos de salida que se consideran "de subida": SSH, FTP activo, FTPS,
+# Immich sync, y el propio puerto de HA (por si otro cliente sube datos a HA).
+UPLOAD_PORTS="21,22,443,990,2283,8123"
+
+logger -t nat-start "Iniciando aplicación de reglas dual-WAN..."
+
+# Función auxiliar: inserta una regla solo si todavía no existe.
+# Uso: ipt_insert_if_missing <tabla> <cadena> [resto de la regla...]
+ipt_insert_if_missing() {
+    local table="$1"; shift
+    local chain="$1"; shift
+    if ! iptables -t "$table" -C "$chain" "$@" 2>/dev/null; then
+        iptables -t "$table" -I "$chain" 1 "$@"
+    fi
 }
 
-# ── 1. TODO el tráfico del HA server va siempre por WAN1 ─────────────────────
-# Esto incluye subidas Y bajadas del servidor HA: es imprescindible para que
-# las conexiones entrantes (port forward 443/8123) sean estables.
+# =============================================================================
+# BLOQUE 1 — CONNMARK restore (debe ser lo PRIMERO en PREROUTING)
+#
+# Para conexiones ya establecidas, restauramos la marca guardada en el
+# conntrack antes de evaluar cualquier otra regla. Así los paquetes
+# subsiguientes de una sesión siguen el mismo WAN que eligió el primer SYN.
+# =============================================================================
+ipt_insert_if_missing mangle PREROUTING \
+    -m connmark ! --mark 0x00/0x0f \
+    -j CONNMARK --restore-mark --nfmask 0x0f --ctmask 0x0f
 
-if ! rule_exists mangle PREROUTING -s "$HA_IP" -j MARK --set-mark $WAN1_MARK; then
-    $MANGLE -I PREROUTING -s "$HA_IP" -j MARK --set-mark $WAN1_MARK
-fi
+# =============================================================================
+# BLOQUE 2 — ThinkPad X250 (HA server) → siempre WAN1
+#
+# Todo el tráfico originado en el servidor HA lleva la marca de WAN1.
+# Esto garantiza que las conexiones entrantes por port forward (443 y 8123)
+# y las salientes (DuckDNS update, notificaciones, etc.) siempre usen O2.
+# También marcamos el destino para que las respuestas al tráfico entrante
+# (port forward) salgan por el mismo WAN.
+# =============================================================================
+ipt_insert_if_missing mangle PREROUTING \
+    -s "$HAOS_IP" -j MARK --set-mark $WAN1_MARK
 
-# ── 2. Puertos de subida comunes → WAN1 para cualquier origen en la LAN ──────
-# No podemos distinguir upload/download de un mismo socket, pero sí podemos
-# forzar por WAN1 las conexiones que SALEN hacia servicios donde la subida
-# importa (SSH, FTP activo, Immich sync, etc.).
-# Esto afecta a conexiones INICIADAS desde la LAN hacia esos puertos remotos.
+ipt_insert_if_missing mangle PREROUTING \
+    -d "$HAOS_IP" -j MARK --set-mark $WAN1_MARK
 
-for DPORT in 22 21 990 2283; do
-    if ! rule_exists mangle PREROUTING -s "$LAN_SUBNET" -p tcp --dport $DPORT -j MARK --set-mark $WAN1_MARK; then
-        $MANGLE -I PREROUTING -s "$LAN_SUBNET" -p tcp --dport $DPORT -j MARK --set-mark $WAN1_MARK
-    fi
-done
+# =============================================================================
+# BLOQUE 3 — Puertos de subida para toda la LAN → WAN1
+#
+# Forzamos WAN1 cuando cualquier dispositivo de la LAN inicia una conexión
+# hacia un puerto de destino asociado a subidas (SSH, FTP, Immich, etc.).
+#
+# LIMITACIÓN CONOCIDA: TCP no separa upload de download por paquete.
+# Esta regla fuerza por WAN1 las *sesiones* cuyo puerto destino indica
+# que habrá una subida relevante. No podemos garantizar WAN1 para la
+# parte de subida de sesiones de descarga genérica sin hardware adicional.
+# =============================================================================
+ipt_insert_if_missing mangle PREROUTING \
+    -s "$LAN_SUBNET" -p tcp \
+    -m multiport --dports $UPLOAD_PORTS \
+    -j MARK --set-mark $WAN1_MARK
 
-# Puerto UDP 22 no existe (SFTP usa TCP/22, mismo caso anterior).
-# Si en el futuro añades rclone sftp u otro, ya queda cubierto por el tcp/22.
+ipt_insert_if_missing mangle PREROUTING \
+    -s "$LAN_SUBNET" -p udp \
+    -m multiport --dports $UPLOAD_PORTS \
+    -j MARK --set-mark $WAN1_MARK
 
-# ── 3. CONNMARK: propagar la marca de WAN al resto de paquetes del flujo ─────
-# Sin esto, solo el primer paquete SYN llevaría la marca; los siguientes
-# irían por la ruta por defecto del load balancer.
+# =============================================================================
+# BLOQUE 4 — CONNMARK save (POSTROUTING)
+#
+# Guardamos la marca final del paquete en el conntrack de la conexión para
+# que el bloque 1 pueda restaurarla en los paquetes siguientes.
+# =============================================================================
+ipt_insert_if_missing mangle POSTROUTING \
+    -j CONNMARK --save-mark --nfmask 0x0f --ctmask 0x0f
 
-if ! rule_exists mangle PREROUTING -j CONNMARK --restore-mark --mask 0x0f; then
-    $MANGLE -I PREROUTING -j CONNMARK --restore-mark --mask 0x0f
-fi
-
-if ! rule_exists mangle POSTROUTING -j CONNMARK --save-mark --mask 0x0f; then
-    $MANGLE -I POSTROUTING -j CONNMARK --save-mark --mask 0x0f
-fi
-
-logger -t nat-start "Reglas de routing dual-WAN aplicadas (HA=$HA_IP → WAN1, puertos subida → WAN1)"
+logger -t nat-start "Reglas aplicadas: HAOS ($HAOS_IP) → WAN1 siempre; puertos subida ($UPLOAD_PORTS) → WAN1."
