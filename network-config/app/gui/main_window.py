@@ -5,7 +5,7 @@ from datetime import datetime
 from PyQt6.QtCore import Qt, QThread, QObject, pyqtSignal
 from PyQt6.QtWidgets import (
     QMainWindow, QTabWidget, QToolBar, QPushButton,
-    QStatusBar, QLabel, QApplication,
+    QStatusBar, QLabel, QApplication, QWidget,
 )
 from PyQt6.QtGui import QAction
 
@@ -17,6 +17,7 @@ from gui.config_tab import ConfigTab
 from gui.log_tab import LogTab
 from gui.browser_tab import BrowserTab
 from gui.help_tab import HelpTab
+from gui.notification_bell import NotificationBell
 
 
 class MainWindow(QMainWindow):
@@ -60,6 +61,19 @@ class MainWindow(QMainWindow):
         subnet_label = QLabel("  Subred: 192.168.50.0/24  ")
         subnet_label.setStyleSheet("color: #4a9eff; font-weight: bold; background: transparent;")
         toolbar.addWidget(subnet_label)
+
+        # Push bell to the right
+        spacer = QWidget()
+        spacer.setSizePolicy(
+            spacer.sizePolicy().horizontalPolicy(),
+            spacer.sizePolicy().verticalPolicy(),
+        )
+        from PyQt6.QtWidgets import QSizePolicy
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        toolbar.addWidget(spacer)
+
+        self._bell = NotificationBell(self)
+        toolbar.addWidget(self._bell)
 
     def _build_tabs(self) -> None:
         self._tabs = QTabWidget()
