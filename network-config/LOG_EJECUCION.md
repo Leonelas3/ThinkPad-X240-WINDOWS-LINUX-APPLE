@@ -8,7 +8,7 @@ Registro cronológico de decisiones, problemas y soluciones durante la instalaci
 
 ### Decisiones de arquitectura
 - **Router principal**: Asus RT-BE50 (WiFi 7, Dual WAN nativo)
-- **ISP 1**: O2 fibra simétrica 1 Gbps → WAN1 del Asus (uploads siempre por aquí)
+- **ISP 1**: O2 fibra simétrica 600 Mbps → WAN1 del Asus (uploads siempre por aquí)
 - **ISP 2**: Vodafone cable 600/50 Mbps → WAN2 del Asus (pendiente instalación ~15 días)
 - **Domótica**: ThinkPad X250 con HAOS nativo en 192.168.50.10
 - **Zigbee**: Sonoff Dongle Max por LAN RJ45 (no USB) en 192.168.50.5:6638
@@ -85,7 +85,7 @@ Análisis del syslog del router Asus reveló:
 ```
 Fibra → Mitrastar GPT-2742GX4X5v6 (PPPoE con O2, da DHCP)
            ↓ LAN
-        Asus RT-BE50 WAN → IP: 192.168.1.102 (fija por MAC)
+        Asus RT-BE50 WAN → IP: 192.168.1.102 (fija por MAC, DHCP)
            ↓
         Red LAN 192.168.50.0/24
 ```
@@ -95,6 +95,12 @@ Doble NAT pero funcional.
 - Las credenciales del Mitrastar (O2) son válidas para PPPoE directo en Asus si en el futuro se logra el bridge
 - O2 usa la misma infraestructura que Movistar → mismas credenciales que extrae el HGU
 - VLAN requerida para Movistar/O2 en España: **VLAN ID 6**
+- En la pantalla GPON del Mitrastar se confirma: VID/Prioridad 6/1, PPPoE ✅
+
+### IP pública O2
+- IP pública actual: **83.58.202.207** (dinámica, sin servicio de IP fija en O2)
+- O2 no ofrece IP fija en su catálogo (Movistar la ofrece a 30€/mes pero es otra marca)
+- Solución: DuckDNS actualiza automáticamente cuando cambia la IP
 
 ---
 
@@ -106,59 +112,90 @@ Doble NAT pero funcional.
 - NAT → Port Triggering: dinámico, no sirve para HA
 - **Conclusión**: Firmware de Movistar tiene capado el port forwarding en interfaz avanzada
 
-### Limitación adicional descubierta
-- La interfaz simple del Mitrastar ("Puertos") solo permite **una regla por IP destino**
-- Impide abrir tanto el 443 como el 8123 hacia la misma IP del Asus
-- Esta limitación fue la razón original de comprar el Asus RT-BE50
+### Solución encontrada: cambiar NAT a "Función completa"
+- La interfaz GPON del Mitrastar tenía NAT en modo **Solo SUA** (básico, una regla por IP)
+- Cambiando a **Función completa** se desbloquea el port forwarding completo
+- También se deshabilitó el **acceso remoto MGMT** del Mitrastar (que bloqueaba el puerto 443)
 
-### Plan de port forwarding acordado
+### Reglas configuradas en el Mitrastar (interfaz simple → Puertos)
+| Nombre | Proto | Puerto externo | Puerto interno | IP destino | Estado |
+|---|---|---|---|---|---|
+| Google home 443 | TCP | 443 | 8123 | 192.168.1.102 | ON |
+| ha | TCP+UDP | 8123 | 8123 | 192.168.1.102 | ON |
+| immich | TCP | 2283 | 2283 | 192.168.1.102 | ON |
 
-**Ahora mismo (un solo router disponible):**
-| Router | Puerto | Destino |
+### Reglas a configurar en el Asus (segundo salto)
+| Nombre | Puerto externo | IP destino | Puerto interno |
+|---|---|---|---|
+| HA HTTPS | 443 | 192.168.50.10 | 8123 |
+| HA directa | 8123 | 192.168.50.10 | 8123 |
+| Immich | 2283 | 192.168.50.20 | 2283 |
+
+### Plan con dos ISP (cuando llegue Vodafone)
+| Router | Puerto | Destino | Uso |
+|---|---|---|---|
+| Mitrastar → Asus WAN1 | 443 | 192.168.50.10:8123 | DuckDNS/HTTPS |
+| Vodafone → Asus WAN2 | 8123 | 192.168.50.10:8123 | App nativa HA |
+
+---
+
+## Sesión 6 — Diagnóstico y corrección de red Asus
+
+### Problemas encontrados y resueltos
+1. **WAN con IP estática y máscara 255.255.255.255** → sin internet
+   - Causa: se configuró como estática con máscara incorrecta
+   - Solución: cambiar máscara a 255.255.255.0 y luego WAN a DHCP ✅
+
+2. **Dual WAN en modo Load Balance** con WAN2 vacía → cortes periódicos
+   - Pendiente de desactivar completamente
+
+3. **DNS DHCP añadidos**: 1.1.1.1 (Cloudflare) y 9.9.9.9 (Quad9) ✅
+
+### Resultado speedtest (fast.com desde móvil por WiFi Asus)
+- **Descarga: 760 Mbps** (contratado: 600 Mbps — un 27% por encima)
+- **Subida: 480 Mbps**
+- **Latencia descarga: 13 ms**
+- Doble NAT no penaliza la velocidad ✅
+- IP pública confirmada: 83.58.202.207, Zamora ES, Telefonica-Movistar
+
+### Reservas DHCP configuradas en Asus
+| Hostname | MAC | IP fija |
 |---|---|---|
-| Mitrastar | 443 TCP | 192.168.1.102 (Asus WAN) |
-| Asus | 443 | 192.168.50.10:8123 (HA) |
+| HA-LAN | 50:7B:9D:77:51:A5 | 192.168.50.10 |
+| miniPC | 30:24:32:B3:E0:C5 | 192.168.50.20 |
 
-**Cuando llegue Vodafone (dos routers, un puerto cada uno):**
-| Router | Puerto | Destino |
-|---|---|---|
-| Mitrastar → Asus WAN1 | 443 TCP | 192.168.50.10:8123 — para DuckDNS/HTTPS |
-| Vodafone → Asus WAN2 | 8123 TCP | 192.168.50.10:8123 — para app nativa HA |
-
-### Configuración HA para que el app funcione con 443
-En HA → Configuración → Sistema → Red:
-```
-URL externa: https://leonelastres.duckdns.org
-URL interna: http://192.168.50.10:8123
-```
-
-### Nabu Casa
-- Activo en trial temporal para mantener acceso remoto durante la instalación
-- **No se va a mantener** — alternativa: DuckDNS + puerto 443
-- Desactivar cuando port forwarding esté funcional
-
-### WiFi del Mitrastar
-- Pendiente de desactivar para reducir carga del HGU
-- Ruta: Configuración de red → WiFi → desactivar cada banda
+### Red IoT (_iot)
+- El Asus crea automáticamente una red `_iot` separada por seguridad
+- Dispositivos en red principal (necesitan HA local): deshumidificador, enchufes WiFi, dispositivos Tuya/ESPHome
+- Dispositivos en red _iot (solo nube): Google TV, Alexa
+- Zigbee (Sonoff LAN): no afectado por WiFi, usa cable
 
 ---
 
 ## Estado actual (30 mayo 2026)
 
-### Funciona ✅
-- Internet por O2 vía Mitrastar → Asus (DHCP, doble NAT)
+### ✅ Completado
+- Internet funcionando: 760 Mbps descarga vía Mitrastar → Asus (doble NAT)
 - Red LAN 192.168.50.x activa
+- DNS: 1.1.1.1 / 9.9.9.9 configurados en DHCP del Asus
+- IPs fijas por MAC: ThinkPad X250 (50.10), HP Mini (50.20)
+- Port forwarding en Mitrastar: 443→8123, 8123→8123, 2283→2283 todos a 192.168.1.102
+- NAT Mitrastar: cambiado a "Función completa"
+- MGMT remoto Mitrastar: deshabilitado (liberó puerto 443)
 - Home Assistant accesible localmente: http://homeassistant.local:8123
 - SSH a HA: `ssh hassio@192.168.50.10 -p 22222`
-- Nabu Casa (temporal): acceso remoto activo
 
-### Pendiente ⏳
-- [ ] Desactivar WiFi en el Mitrastar
-- [ ] Añadir regla puerto 443 en Mitrastar → 192.168.1.102
+### ⏳ Pendiente
+- [ ] **URGENTE**: Desactivar Dual WAN en Asus (sigue en Load Balance con WAN2 vacía → causa cortes)
+- [ ] Desactivar WiFi del Mitrastar (liberar recursos del HGU)
+- [ ] Renombrar WiFi del Asus igual que la del Movistar (para reconexión automática de dispositivos)
+- [ ] Configurar port forwarding en el Asus: 443→50.10:8123, 8123→50.10:8123, 2283→50.20:2283
+- [ ] Actualizar DuckDNS con IP pública: 83.58.202.207
 - [ ] Configurar URL externa en HA: https://leonelastres.duckdns.org
+- [ ] Activar add-on DuckDNS en HA para actualización automática de IP
 - [ ] Instalar Vodafone (traslado domicilio, ~15 días)
-- [ ] Al llegar Vodafone: activar Dual WAN en Asus, añadir puerto 8123 en Asus WAN2
+- [ ] Al llegar Vodafone: activar Dual WAN, añadir puerto 8123 en Asus WAN2
 - [ ] Subir nat-start al Asus por SSH cuando Dual WAN esté activo
 - [ ] Conectar Sonoff Dongle Max por LAN → reservar 192.168.50.5 en DHCP Asus
 - [ ] Configurar ZHA en HA: socket://192.168.50.5:6638
-- [ ] Desactivar Nabu Casa cuando port forwarding esté funcional
+- [ ] Desactivar Nabu Casa cuando port forwarding esté funcional y probado
