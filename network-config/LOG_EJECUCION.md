@@ -172,30 +172,61 @@ Doble NAT pero funcional.
 
 ---
 
-## Estado actual (30 mayo 2026)
+## Sesión 7 — Port forwarding Asus + Dual WAN desactivado
+
+### Dual WAN desactivado
+- **Panel Asus → WAN → Dual WAN → OFF** ✅
+- Causa raíz de los cortes periódicos y Disney+ freezing eliminada
+- Con Dual WAN desactivado, todo el tráfico va por WAN1 (O2) sin interrupciones
+
+### Port forwarding configurado en el Asus (segundo salto del doble NAT)
+**Panel Asus → WAN → Virtual Server / Port Forwarding**
+
+| Nombre | Puerto externo | IP local destino | Puerto interno | Protocolo |
+|---|---|---|---|---|
+| HA-HTTPS | 443 | 192.168.50.10 | 8123 | TCP |
+| HA-directo | 8123 | 192.168.50.10 | 8123 | TCP+UDP |
+| Immich | 2283 | 192.168.50.20 | 2283 | TCP |
+
+### Cadena completa de port forwarding operativa
+```
+Internet → IP pública 83.58.202.207
+  → Mitrastar (443→192.168.1.102:443, 8123→:8123, 2283→:2283)
+    → Asus WAN 192.168.1.102 (443→192.168.50.10:8123, 8123→:8123, 2283→192.168.50.20:2283)
+      → HA en ThinkPad X250 :8123
+      → Immich en HP Mini :2283
+```
+
+---
+
+## Estado actual (31 mayo 2026)
 
 ### ✅ Completado
 - Internet funcionando: 760 Mbps descarga vía Mitrastar → Asus (doble NAT)
 - Red LAN 192.168.50.x activa
 - DNS: 1.1.1.1 / 9.9.9.9 configurados en DHCP del Asus
 - IPs fijas por MAC: ThinkPad X250 (50.10), HP Mini (50.20)
+- WiFi Mitrastar desactivada (libera recursos del HGU)
+- SSID Asus renombrado igual que la red Movistar anterior (reconexión automática de dispositivos)
 - Port forwarding en Mitrastar: 443→8123, 8123→8123, 2283→2283 todos a 192.168.1.102
 - NAT Mitrastar: cambiado a "Función completa"
 - MGMT remoto Mitrastar: deshabilitado (liberó puerto 443)
+- **Dual WAN desactivado en Asus** (elimina cortes y freezing Disney+)
+- **Port forwarding en Asus**: 443→50.10:8123, 8123→50.10:8123, 2283→50.20:2283
 - Home Assistant accesible localmente: http://homeassistant.local:8123
 - SSH a HA: `ssh hassio@192.168.50.10 -p 22222`
+- Cadena doble NAT completa: internet → Mitrastar → Asus → HA / Immich
 
 ### ⏳ Pendiente
-- [ ] **URGENTE**: Desactivar Dual WAN en Asus (sigue en Load Balance con WAN2 vacía → causa cortes)
-- [ ] Desactivar WiFi del Mitrastar (liberar recursos del HGU)
-- [ ] Renombrar WiFi del Asus igual que la del Movistar (para reconexión automática de dispositivos)
-- [ ] Configurar port forwarding en el Asus: 443→50.10:8123, 8123→50.10:8123, 2283→50.20:2283
 - [ ] Actualizar DuckDNS con IP pública: 83.58.202.207
-- [ ] Configurar URL externa en HA: https://leonelastres.duckdns.org
 - [ ] Activar add-on DuckDNS en HA para actualización automática de IP
+- [ ] Configurar URL externa en HA (Settings → System → Network): `https://leonelastres.duckdns.org`
+- [ ] Reactivar SSL en HA (configuration.yaml): ssl_certificate + ssl_key bajo http:
+- [ ] Probar acceso externo completo: https://leonelastres.duckdns.org → HA
+- [ ] Desactivar Nabu Casa cuando acceso externo esté confirmado
 - [ ] Instalar Vodafone (traslado domicilio, ~15 días)
-- [ ] Al llegar Vodafone: activar Dual WAN, añadir puerto 8123 en Asus WAN2
+- [ ] Al llegar Vodafone: activar Dual WAN en Asus (Load Balance), WAN2 = Vodafone
+- [ ] Al llegar Vodafone: añadir port forwarding 8123 en router Vodafone → Asus WAN2
 - [ ] Subir nat-start al Asus por SSH cuando Dual WAN esté activo
 - [ ] Conectar Sonoff Dongle Max por LAN → reservar 192.168.50.5 en DHCP Asus
 - [ ] Configurar ZHA en HA: socket://192.168.50.5:6638
-- [ ] Desactivar Nabu Casa cuando port forwarding esté funcional y probado
