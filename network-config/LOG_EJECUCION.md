@@ -213,6 +213,7 @@ Internet → IP pública 83.58.202.207
 - MGMT remoto Mitrastar: deshabilitado (liberó puerto 443)
 - **Dual WAN desactivado en Asus** (elimina cortes y freezing Disney+)
 - **Port forwarding en Asus**: 443→50.10:8123, 8123→50.10:8123, 2283→50.20:2283
+- **Red _iot del Asus eliminada** (perfil borrado — Echo Dots, Fire TV y Google TV en red principal)
 - Home Assistant accesible localmente: http://homeassistant.local:8123
 - SSH a HA: `ssh hassio@192.168.50.10 -p 22222`
 - Cadena doble NAT completa: internet → Mitrastar → Asus → HA / Immich
